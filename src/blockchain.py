@@ -2,8 +2,8 @@
 import datetime
 import hashlib
 import json
-
-# Blockchain creation
+import requests
+from urllib.parse import urlparse
 
 
 class Blockchain:
@@ -14,8 +14,10 @@ class Blockchain:
         - difficulty: Número de ceros requeridos para el PoW (default: 4)
         """
         self.chain = []
+        self.transactions = []
         self.difficulty = difficulty
         self.create_block(proof=1, previous_hash='0')
+        self.nodes = set()
 
     def create_block(self, proof, previous_hash, data=None):
         """ New block creation 
@@ -32,8 +34,9 @@ class Blockchain:
             'timestamp': datetime.datetime.now().timestamp(),
             'proof': proof,
             'previous_hash': previous_hash,
-            'data': data if data is not None else []
+            'transactions': self.transactions
         }
+        self.transactions = []
         self.chain.append(block)
         return block
 
@@ -107,3 +110,49 @@ class Blockchain:
             previous_block = block
             block_index += 1
         return True
+
+    def add_transaction(self, sender, receiver, amount):
+        """ Añade una nueva transacción a la lista de transacciones
+        Arguments:
+          - sender: Dirección del emisor
+          - receiver: Dirección del receptor
+          - amount: Cantidad a transferir
+        Returns:
+          - index: Índice del bloque que contendrá la transacción
+        """
+        self.transactions.append({
+            'sender': sender,
+            'receiver': receiver,
+            'amount': amount
+        })
+        previous_block = self.get_previous_block()
+        return previous_block['index'] + 1
+
+    def add_node(self, address):
+        """ Añade un nuevo nodo a la lista de nodos
+        Arguments:
+          - address: Dirección del nodo. Ejemplo: 'http://127.0.0.1:5000'
+        """
+        parsed_url = urlparse(address)
+        self.nodes.add(parsed_url.netloc)
+
+    def replace_chain(self):
+        """ Reemplaza la cadena por la más larga si es válida
+        Returns:
+          - True/False: Devuelve un booleano en función de si la cadena fue reemplazada
+        """
+        network = self.nodes
+        longest_chain = None
+        max_length = len(self.chain)
+        for node in network:
+            response = requests.get(f'http://{node}/get_chain')
+            if response.status_code == 200:
+                length = response.json()['length']
+                chain = response.json()['chain']
+                if length > max_length and self.is_chain_valid(chain):
+                    max_length = length
+                    longest_chain = chain
+        if longest_chain:
+            self.chain = longest_chain
+            return True
+        return False
